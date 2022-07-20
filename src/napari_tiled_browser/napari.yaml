@@ -1,0 +1,21 @@
+name: napari-tiled
+display_name: Tiled Browser
+contributions:
+  commands:
+    - id: napari-tiled.make_qwidget
+      python_name: napari_tiled_browser._widget:ExampleQWidget
+      title: Make example QWidget
+    - id: napari-tiled.make_magic_widget
+      python_name: napari_tiled_browser._widget:example_magic_widget
+      title: Make example magic widget
+    - id: napari-tiled.make_func_widget
+      python_name: napari_tiled_browser._widget:example_function_widget
+      title: Make example function widget
+  widgets:
+    - command: napari-tiled.make_qwidget
+      display_name: Example QWidget
+    - command: napari-tiled.make_magic_widget
+      display_name: Example Magic Widget
+    - command: napari-tiled.make_func_widget
+      autogenerate: true
+      display_name: Example Function Widget
