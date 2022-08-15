@@ -37,9 +37,14 @@ class TiledBrowser(QWidget):
     def _on_connect_clicked(self):
         url = self.url_entry.toPlainText()
         if not url:
-            show_info("Please specify a url")
+            show_info("Please specify a url.")
             return
         print(f"{url = }")
-        self.catalog = from_uri(url)
+        try:
+            self.catalog = from_uri(url)
+        except Exception:
+            self.test_label.setText("No url connected")
+            show_info("Could not connect. Please check the url.")
+            return
         print(self.catalog)
         self.test_label.setText(f"Connected to {url}")
