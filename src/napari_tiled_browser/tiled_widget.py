@@ -155,19 +155,12 @@ class TiledBrowser(QWidget):
             self.catalog_table.insertRow(last_row_position)
 
     def _populate_table(self):
-        print(f"{self.catalog_table.rowCount() = }")
-        for row_index in range(self.catalog_table.rowCount()):
-            node_index = self._rows_per_page * self._current_page + row_index
-            print(f"{node_index = }")
-            if node_index < len(self.catalog):
-                if isinstance(self.catalog, list):
-                    node = self.catalog[node_index]
-                else:
-                    # Node, CatalogOfBlueskyRuns, etc.
-                    node = self.catalog.keys()[node_index]
-            else:
-                node = ""
-            self.catalog_table.setItem(row_index, 0, QTableWidgetItem(node))
+        node_offset = self._rows_per_page * self._current_page
+        # Fetch a page of keys.
+        keys = self.catalog.keys()[node_offset:node_offset + self._rows_per_page]
+        # Loop over rows, filling in keys until we run out of keys.
+        for row_index, key in zip(range(self.catalog_table.rowCount()), keys):
+            self.catalog_table.setItem(row_index, 0, QTableWidgetItem(key))
 
     def _on_prev_page_clicked(self):
         if self._current_page != 0:
