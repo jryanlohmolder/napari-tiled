@@ -1,6 +1,10 @@
 [build-system]
-requires = ["setuptools>=42.0.0", "tiled[array,minimal-client]", "wheel"]
+requires = ["setuptools>=42.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = napari-tiled
+depedencies = ["tiled[array,minimal-client]"]
 
 [options.entry_points]
 napari.manifest = "napari_tiled_browser:napari.yaml"
