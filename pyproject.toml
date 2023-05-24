@@ -2,7 +2,11 @@
 requires = ["setuptools>=42.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[options.entry_points]
+napari.manifest = "napari_tiled_browser:napari.yaml"
 
+[options.package_data]
+napari-tiled = "napari.yaml"
 
 [tool.black]
 line-length = 79
