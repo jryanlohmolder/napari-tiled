@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 from tiled.client import from_uri
+from tiled.structures.core import StructureFamily
 
 
 class TiledBrowser(QWidget):
@@ -80,6 +81,7 @@ class TiledBrowser(QWidget):
         
         # disabled due to bad colour palette  # self.catalog_table.setAlternatingRowColors(True)
         self._create_table_rows()
+        self.catalog_table.itemDoubleClicked.connect(self._on_item_double_click)
         self.catalog_table_widget = QWidget()
 
         # Catalog table layout
@@ -157,6 +159,15 @@ class TiledBrowser(QWidget):
         for row in range(self._rows_per_page):
             last_row_position = self.catalog_table.rowCount()
             self.catalog_table.insertRow(last_row_position)
+
+    def _on_item_double_click(self, item):
+        name = item.text()
+        node = self.catalog[name]
+        family = node.item['attributes']['structure_family']
+        if family == StructureFamily.array:
+            self.viewer.add_image(node, name=name)
+        elif family == StructureFamily.node:
+            # TBD... open sub-browser?
 
     def _populate_table(self):
         node_offset = self._rows_per_page * self._current_page
