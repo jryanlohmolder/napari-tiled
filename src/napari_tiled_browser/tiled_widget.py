@@ -10,6 +10,7 @@ Replace code below according to your needs.
 from napari.utils.notifications import show_info
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -74,7 +75,10 @@ class TiledBrowser(QWidget):
 
         # Catalog table elements
         self.catalog_table = QTableWidget(0, 1)
-        self.catalog_table.setHorizontalHeaderLabels(["ID"])
+        self.catalog_table.horizontalHeader().hide()  # remove header
+        self.catalog_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)  # disable multi-select
+        
+        # disabled due to bad colour palette  # self.catalog_table.setAlternatingRowColors(True)
         self._create_table_rows()
         self.catalog_table_widget = QWidget()
 
@@ -160,7 +164,10 @@ class TiledBrowser(QWidget):
         keys = self.catalog.keys()[node_offset:node_offset + self._rows_per_page]
         # Loop over rows, filling in keys until we run out of keys.
         for row_index, key in zip(range(self.catalog_table.rowCount()), keys):
-            self.catalog_table.setItem(row_index, 0, QTableWidgetItem(key))
+            item = QTableWidgetItem(key)
+            item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+            self.catalog_table.setItem(row_index, 0, item)
+        self.catalog_table.setVerticalHeaderLabels([str(x + 1) for x in range(node_offset, node_offset + self.catalog_table.rowCount())])
 
     def _on_prev_page_clicked(self):
         if self._current_page != 0:
