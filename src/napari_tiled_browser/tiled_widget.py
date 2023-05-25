@@ -10,6 +10,7 @@ Replace code below according to your needs.
 from napari.utils.notifications import show_info
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -22,6 +23,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 from tiled.client import from_uri
+from tiled.structures.core import StructureFamily
 
 
 class TiledBrowser(QWidget):
@@ -74,8 +76,12 @@ class TiledBrowser(QWidget):
 
         # Catalog table elements
         self.catalog_table = QTableWidget(0, 1)
-        self.catalog_table.setHorizontalHeaderLabels(["ID"])
+        self.catalog_table.horizontalHeader().hide()  # remove header
+        self.catalog_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)  # disable multi-select
+        
+        # disabled due to bad colour palette  # self.catalog_table.setAlternatingRowColors(True)
         self._create_table_rows()
+        self.catalog_table.itemDoubleClicked.connect(self._on_item_double_click)
         self.catalog_table_widget = QWidget()
 
         # Catalog table layout
@@ -154,13 +160,26 @@ class TiledBrowser(QWidget):
             last_row_position = self.catalog_table.rowCount()
             self.catalog_table.insertRow(last_row_position)
 
+    def _on_item_double_click(self, item):
+        name = item.text()
+        node = self.catalog[name]
+        family = node.item['attributes']['structure_family']
+        if family == StructureFamily.array:
+            self.viewer.add_image(node, name=name)
+        elif family == StructureFamily.node:
+            pass
+            # TBD... open sub-browser?
+
     def _populate_table(self):
         node_offset = self._rows_per_page * self._current_page
         # Fetch a page of keys.
         keys = self.catalog.keys()[node_offset:node_offset + self._rows_per_page]
         # Loop over rows, filling in keys until we run out of keys.
         for row_index, key in zip(range(self.catalog_table.rowCount()), keys):
-            self.catalog_table.setItem(row_index, 0, QTableWidgetItem(key))
+            item = QTableWidgetItem(key)
+            item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+            self.catalog_table.setItem(row_index, 0, item)
+        self.catalog_table.setVerticalHeaderLabels([str(x + 1) for x in range(node_offset, node_offset + self.catalog_table.rowCount())])
 
     def _on_prev_page_clicked(self):
         if self._current_page != 0:
