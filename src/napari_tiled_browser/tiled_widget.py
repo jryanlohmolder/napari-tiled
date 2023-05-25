@@ -167,6 +167,7 @@ class TiledBrowser(QWidget):
         if family == StructureFamily.array:
             self.viewer.add_image(node, name=name)
         elif family == StructureFamily.node:
+            pass
             # TBD... open sub-browser?
 
     def _populate_table(self):
