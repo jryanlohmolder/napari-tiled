@@ -6,9 +6,15 @@ see: https://napari.org/plugins/guides.html?#widgets
 
 Replace code below according to your needs.
 """
+import collections
+from datetime import date, datetime
+import functools
+import json
 
 from napari.utils.notifications import show_info
+from napari.resources._icons import ICONS
 from qtpy.QtCore import Qt, Signal
+from qtpy.QtGui import QIcon, QPixmap
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -17,16 +23,37 @@ from qtpy.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSplitter,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 from tiled.client import from_uri
+from tiled.client.array import DaskArrayClient
+from tiled.client.node import Node
 from tiled.structures.core import StructureFamily
 
 
+def json_decode(obj):
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    return str(obj)
+
+
+class DummyClient:
+    "Placeholder for a structure family we cannot (yet) handle"
+    def __init__(self, *args, item, **kwargs):
+        self.item = item
+
+STRUCTURE_CLIENTS = collections.defaultdict(lambda: DummyClient)
+STRUCTURE_CLIENTS.update({"array": DaskArrayClient, "node": Node})
+
 class TiledBrowser(QWidget):
+    NODE_ID_MAXLEN = 8
+    SUPPORTED_TYPES = (StructureFamily.array, StructureFamily.node)
+
     # your QWidget.__init__ can optionally request the napari viewer instance
     # in one of two ways:
     # 1. use a parameter called `napari_viewer`, as done here
@@ -34,8 +61,8 @@ class TiledBrowser(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-        self.catalog = None
-        self._current_page = 0  # Keep track of where in the catalog we are
+        
+        self.set_root(None)
 
         # Connection elements
         self.url_entry = QLineEdit()
@@ -55,7 +82,7 @@ class TiledBrowser(QWidget):
         # Navigation elements
         self.rows_per_page_label = QLabel("Rows per page: ")
         self.rows_per_page_selector = QComboBox()
-        self.rows_per_page_selector.addItems(["5", "10"])
+        self.rows_per_page_selector.addItems(["5", "10", "25"])
         self.rows_per_page_selector.setCurrentIndex(0)
 
         self.current_location_label = QLabel()
@@ -74,20 +101,41 @@ class TiledBrowser(QWidget):
         navigation_layout.addWidget(self.next_page)
         self.navigation_widget.setLayout(navigation_layout)
 
+        # Current path layout
+        self.current_path_label = QLabel()
+        self._rebuild_current_path_label()
+
         # Catalog table elements
         self.catalog_table = QTableWidget(0, 1)
+        self.catalog_table.horizontalHeader().setStretchLastSection(True)
+        self.catalog_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # disable editing
         self.catalog_table.horizontalHeader().hide()  # remove header
         self.catalog_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)  # disable multi-select
-        
         # disabled due to bad colour palette  # self.catalog_table.setAlternatingRowColors(True)
-        self._create_table_rows()
         self.catalog_table.itemDoubleClicked.connect(self._on_item_double_click)
+        self.catalog_table.itemSelectionChanged.connect(self._on_item_selected)
         self.catalog_table_widget = QWidget()
+        self.catalog_breadcrumbs = None
+
+        # Info layout
+        self.info_box = QTextEdit()
+        self.info_box.setReadOnly(True)
+        self.load_button = QPushButton('Open')
+        self.load_button.setEnabled(False)
+        self.load_button.clicked.connect(self._on_load)
+        catalog_info_layout = QHBoxLayout()
+        catalog_info_layout.addWidget(self.catalog_table)
+        load_layout = QVBoxLayout()
+        load_layout.addWidget(self.info_box)
+        load_layout.addWidget(self.load_button)
+        catalog_info_layout.addLayout(load_layout)
 
         # Catalog table layout
         catalog_table_layout = QVBoxLayout()
-        catalog_table_layout.addWidget(self.catalog_table)
+        catalog_table_layout.addWidget(self.current_path_label)
+        catalog_table_layout.addLayout(catalog_info_layout)
         catalog_table_layout.addWidget(self.navigation_widget)
+        catalog_table_layout.addStretch(1)
         self.catalog_table_widget.setLayout(catalog_table_layout)
         self.catalog_table_widget.setVisible(False)
 
@@ -111,97 +159,191 @@ class TiledBrowser(QWidget):
             self._on_rows_per_page_changed
         )
 
-    # def _on_connect_clicked(self):
-    #     url = self.url_entry.displayText()
-    #     if not url:
-    #         show_info("Please specify a url.")
-    #         return
-    #     try:
-    #         self.catalog = from_uri(url)
-    #     except Exception:
-    #         show_info("Could not connect. Please check the url.")
-    #         return
-    #     self.connection_label.setText(f"Connected to {url}")
-    #     self.catalog_table_widget.setVisible(True)
-    #     self._set_current_location_label()
-    #     self._populate_table()
-
     def _on_connect_clicked(self):
-        url = self.url_entry.displayText()
+        url = self.url_entry.displayText().strip()
         # url = "https://tiled-demo.blueskyproject.io/api"
         if not url:
             show_info("Please specify a url.")
             return
         try:
-            # self.catalog = from_uri(url)["bmm"]["raw"]  # .keys()[:13]
-            self.catalog = from_uri(url)
+            root = from_uri(url, STRUCTURE_CLIENTS)
+            if isinstance(root, DummyClient):
+                show_info("Unsupported tiled type detected")
         except Exception:
             show_info("Could not connect. Please check the url.")
-            return
+        else:
+            self.connection_label.setText(f"Connected to {url}")
+            self.set_root(root)
 
-        print(f"{self.catalog = }")
-        self.connection_label.setText(f"Connected to {url}")
-        self.catalog_table_widget.setVisible(True)
-        self._set_current_location_label()
-        self._populate_table()
+    def set_root(self, root):
+        self.root = root
+        self.node_path = ()
+        self._current_page = 0
+        if root is not None:
+            self.catalog_table_widget.setVisible(True)
+            self._rebuild()
+
+    def get_current_node(self):
+        return self.get_node(self.node_path)
+    
+    @functools.lru_cache(maxsize=1)
+    def get_node(self, node_path):
+        if node_path:
+            return self.root[node_path]
+        return self.root
+    
+    def enter_node(self, node_id):
+        self.node_path += (node_id,)
+        self._current_page = 0
+        self._rebuild()
+
+    def exit_node(self):
+        self.node_path = self.node_path[:-1]
+        self._current_page = 0
+        self._rebuild()
+
+    def open_node(self, node_id):
+        node = self.get_current_node()[node_id]
+        family = node.item['attributes']['structure_family']
+        if isinstance(node, DummyClient):
+            show_info(f"Cannot open type: '{family}'")
+            return
+        if family == StructureFamily.array:
+            layer = self.viewer.add_image(node, name=node_id)
+            layer.reset_contrast_limits()
+        elif family == StructureFamily.node:
+            self.enter_node(node_id)
+        else:
+            show_info(f"Type not supported:'{family}")
+
+    def _on_load(self):
+        selected = self.catalog_table.selectedItems()
+        if not selected:
+            return
+        item = selected[0]
+        if item is self.catalog_breadcrumbs:
+            return
+        self.open_node(item.text())
 
     def _on_rows_per_page_changed(self, value):
         self._rows_per_page = int(value)
-        self._create_table_rows()
-        self._populate_table()
+        self._current_page = 0
+        self._rebuild_table()
         self._set_current_location_label()
 
-    def _create_table_rows(self):
+    def _on_item_double_click(self, item):
+        if item is self.catalog_breadcrumbs:
+            self.exit_node()
+            return
+        self.open_node(item.text())
+
+    def _on_item_selected(self):
+        selected = self.catalog_table.selectedItems()
+        if not selected or (item:=selected[0]) is self.catalog_breadcrumbs:
+            self._clear_metadata()
+            return
+
+        name = item.text()
+        node_path = self.node_path + (name,)
+        node = self.get_node(node_path)
+        
+        attrs = node.item['attributes']
+        family = attrs['structure_family']
+        metadata = json.dumps(attrs['metadata'], indent=2, default=json_decode)
+
+        info = f'<b>type:</b> {family}<br>'
+        if family == StructureFamily.array:
+            shape = attrs['structure']['macro']['shape']
+            info += f'<b>shape:</b> {tuple(shape)}<br>'
+        info += f'<b>metadata:</b> {metadata}'
+        self.info_box.setText(info)
+
+        if family in self.SUPPORTED_TYPES:
+            self.load_button.setEnabled(True)
+        else:
+            self.load_button.setEnabled(False)
+
+    def _clear_metadata(self):
+        self.info_box.setText('')
+        self.load_button.setEnabled(False)
+
+    def _rebuild_current_path_label(self):
+        path = ['root']
+        for node_id in self.node_path:
+            if len(node_id) > self.NODE_ID_MAXLEN:
+                node_id = node_id[:self.NODE_ID_MAXLEN - 3] + '...'
+            path.append(node_id)
+        path.append('')
+
+        self.current_path_label.setText(' / '.join(path))
+
+    def _rebuild_table(self):
+        prev_block = self.catalog_table.blockSignals(True)
         # Remove all rows first
         while self.catalog_table.rowCount() > 0:
             self.catalog_table.removeRow(0)
+
+        if self.node_path:
+            # add breadcrumbs
+            self.catalog_breadcrumbs = QTableWidgetItem('..')
+            self.catalog_table.insertRow(0)
+            self.catalog_table.setItem(0, 0, self.catalog_breadcrumbs)
+
         # Then add new rows
         for row in range(self._rows_per_page):
             last_row_position = self.catalog_table.rowCount()
             self.catalog_table.insertRow(last_row_position)
-
-    def _on_item_double_click(self, item):
-        name = item.text()
-        node = self.catalog[name]
-        family = node.item['attributes']['structure_family']
-        if family == StructureFamily.array:
-            self.viewer.add_image(node, name=name)
-        elif family == StructureFamily.node:
-            pass
-            # TBD... open sub-browser?
-
-    def _populate_table(self):
         node_offset = self._rows_per_page * self._current_page
         # Fetch a page of keys.
-        keys = self.catalog.keys()[node_offset:node_offset + self._rows_per_page]
+        items = self.get_current_node().items()[node_offset:node_offset + self._rows_per_page]
         # Loop over rows, filling in keys until we run out of keys.
-        for row_index, key in zip(range(self.catalog_table.rowCount()), keys):
-            item = QTableWidgetItem(key)
-            item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-            self.catalog_table.setItem(row_index, 0, item)
-        self.catalog_table.setVerticalHeaderLabels([str(x + 1) for x in range(node_offset, node_offset + self.catalog_table.rowCount())])
+        start = 1 if self.node_path else 0
+        for row_index, (key, value) in zip(range(start, self.catalog_table.rowCount()), items):
+            family = value.item['attributes']['structure_family']
+            if family == StructureFamily.node:
+                icon = self.style().standardIcon(QStyle.SP_DirHomeIcon)
+            elif family == StructureFamily.array:
+                icon = QIcon(QPixmap(ICONS['new_image']))
+            else:
+                icon = self.style().standardIcon(QStyle.SP_TitleBarContextHelpButton)
+            self.catalog_table.setItem(row_index, 0, QTableWidgetItem(icon,key))
+
+        # remove extra rows
+        for row in range(self._rows_per_page - len(items)):
+            self.catalog_table.removeRow(self.catalog_table.rowCount() - 1)
+        
+        headers = [str(x + 1) for x in range(node_offset, node_offset + self.catalog_table.rowCount())]
+        if self.node_path:
+            headers = [''] + headers
+
+        self.catalog_table.setVerticalHeaderLabels(headers)
+        self._clear_metadata()
+        self.catalog_table.blockSignals(prev_block)
+
+    def _rebuild(self):
+        self._rebuild_table()
+        self._rebuild_current_path_label()
+        self._set_current_location_label()
 
     def _on_prev_page_clicked(self):
         if self._current_page != 0:
             self._current_page -= 1
-            self._populate_table()
-            self._set_current_location_label()
+            self._rebuild()
 
     def _on_next_page_clicked(self):
         if (
             self._current_page * self._rows_per_page
-        ) + self._rows_per_page < len(self.catalog):
+        ) + self._rows_per_page < len(self.get_current_node()):
             self._current_page += 1
-            self._populate_table()
-            self._set_current_location_label()
+            self._rebuild()
 
     def _set_current_location_label(self):
         starting_index = self._current_page * self._rows_per_page + 1
         ending_index = min(
-            self._rows_per_page * (self._current_page + 1), len(self.catalog)
+            self._rows_per_page * (self._current_page + 1), len(self.get_current_node())
         )
         current_location_text = (
-            f"{starting_index}-{ending_index} of {len(self.catalog)}"
+            f"{starting_index}-{ending_index} of {len(self.get_current_node())}"
         )
         self.current_location_label.setText(current_location_text)
 
