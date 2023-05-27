@@ -44,11 +44,14 @@ def json_decode(obj):
 
 class DummyClient:
     "Placeholder for a structure family we cannot (yet) handle"
+
     def __init__(self, *args, item, **kwargs):
         self.item = item
 
+
 STRUCTURE_CLIENTS = collections.defaultdict(lambda: DummyClient)
 STRUCTURE_CLIENTS.update({"array": DaskArrayClient, "node": Node})
+
 
 class TiledBrowser(QWidget):
     NODE_ID_MAXLEN = 8
@@ -61,7 +64,7 @@ class TiledBrowser(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-        
+
         self.set_root(None)
 
         # Connection elements
@@ -90,7 +93,9 @@ class TiledBrowser(QWidget):
         self.next_page = ClickableQLabel(">")
         self.navigation_widget = QWidget()
 
-        self._rows_per_page = int(self.rows_per_page_selector.currentText())
+        self._rows_per_page = int(
+            self.rows_per_page_selector.currentText()
+        )
 
         # Navigation layout
         navigation_layout = QHBoxLayout()
@@ -108,11 +113,18 @@ class TiledBrowser(QWidget):
         # Catalog table elements
         self.catalog_table = QTableWidget(0, 1)
         self.catalog_table.horizontalHeader().setStretchLastSection(True)
-        self.catalog_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # disable editing
+        self.catalog_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )  # disable editing
         self.catalog_table.horizontalHeader().hide()  # remove header
-        self.catalog_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)  # disable multi-select
-        # disabled due to bad colour palette  # self.catalog_table.setAlternatingRowColors(True)
-        self.catalog_table.itemDoubleClicked.connect(self._on_item_double_click)
+        self.catalog_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )  # disable multi-select
+        # disabled due to bad colour palette:
+        # self.catalog_table.setAlternatingRowColors(True)
+        self.catalog_table.itemDoubleClicked.connect(
+            self._on_item_double_click
+        )
         self.catalog_table.itemSelectionChanged.connect(self._on_item_selected)
         self.catalog_table_widget = QWidget()
         self.catalog_breadcrumbs = None
@@ -120,7 +132,7 @@ class TiledBrowser(QWidget):
         # Info layout
         self.info_box = QTextEdit()
         self.info_box.setReadOnly(True)
-        self.load_button = QPushButton('Open')
+        self.load_button = QPushButton("Open")
         self.load_button.setEnabled(False)
         self.load_button.clicked.connect(self._on_load)
         catalog_info_layout = QHBoxLayout()
@@ -185,13 +197,13 @@ class TiledBrowser(QWidget):
 
     def get_current_node(self):
         return self.get_node(self.node_path)
-    
+
     @functools.lru_cache(maxsize=1)
     def get_node(self, node_path):
         if node_path:
             return self.root[node_path]
         return self.root
-    
+
     def enter_node(self, node_id):
         self.node_path += (node_id,)
         self._current_page = 0
@@ -204,7 +216,7 @@ class TiledBrowser(QWidget):
 
     def open_node(self, node_id):
         node = self.get_current_node()[node_id]
-        family = node.item['attributes']['structure_family']
+        family = node.item["attributes"]["structure_family"]
         if isinstance(node, DummyClient):
             show_info(f"Cannot open type: '{family}'")
             return
@@ -239,23 +251,23 @@ class TiledBrowser(QWidget):
 
     def _on_item_selected(self):
         selected = self.catalog_table.selectedItems()
-        if not selected or (item:=selected[0]) is self.catalog_breadcrumbs:
+        if not selected or (item := selected[0]) is self.catalog_breadcrumbs:
             self._clear_metadata()
             return
 
         name = item.text()
         node_path = self.node_path + (name,)
         node = self.get_node(node_path)
-        
-        attrs = node.item['attributes']
-        family = attrs['structure_family']
-        metadata = json.dumps(attrs['metadata'], indent=2, default=json_decode)
 
-        info = f'<b>type:</b> {family}<br>'
+        attrs = node.item["attributes"]
+        family = attrs["structure_family"]
+        metadata = json.dumps(attrs["metadata"], indent=2, default=json_decode)
+
+        info = f"<b>type:</b> {family}<br>"
         if family == StructureFamily.array:
-            shape = attrs['structure']['macro']['shape']
-            info += f'<b>shape:</b> {tuple(shape)}<br>'
-        info += f'<b>metadata:</b> {metadata}'
+            shape = attrs["structure"]["macro"]["shape"]
+            info += f"<b>shape:</b> {tuple(shape)}<br>"
+        info += f"<b>metadata:</b> {metadata}"
         self.info_box.setText(info)
 
         if family in self.SUPPORTED_TYPES:
@@ -264,18 +276,18 @@ class TiledBrowser(QWidget):
             self.load_button.setEnabled(False)
 
     def _clear_metadata(self):
-        self.info_box.setText('')
+        self.info_box.setText("")
         self.load_button.setEnabled(False)
 
     def _rebuild_current_path_label(self):
-        path = ['root']
+        path = ["root"]
         for node_id in self.node_path:
             if len(node_id) > self.NODE_ID_MAXLEN:
-                node_id = node_id[:self.NODE_ID_MAXLEN - 3] + '...'
+                node_id = node_id[: self.NODE_ID_MAXLEN - 3] + "..."
             path.append(node_id)
-        path.append('')
+        path.append("")
 
-        self.current_path_label.setText(' / '.join(path))
+        self.current_path_label.setText(" / ".join(path))
 
     def _rebuild_table(self):
         prev_block = self.catalog_table.blockSignals(True)
@@ -285,7 +297,7 @@ class TiledBrowser(QWidget):
 
         if self.node_path:
             # add breadcrumbs
-            self.catalog_breadcrumbs = QTableWidgetItem('..')
+            self.catalog_breadcrumbs = QTableWidgetItem("..")
             self.catalog_table.insertRow(0)
             self.catalog_table.setItem(0, 0, self.catalog_breadcrumbs)
 
@@ -295,26 +307,39 @@ class TiledBrowser(QWidget):
             self.catalog_table.insertRow(last_row_position)
         node_offset = self._rows_per_page * self._current_page
         # Fetch a page of keys.
-        items = self.get_current_node().items()[node_offset:node_offset + self._rows_per_page]
+        items = self.get_current_node().items()[
+            node_offset : node_offset + self._rows_per_page
+        ]
         # Loop over rows, filling in keys until we run out of keys.
         start = 1 if self.node_path else 0
-        for row_index, (key, value) in zip(range(start, self.catalog_table.rowCount()), items):
-            family = value.item['attributes']['structure_family']
+        for row_index, (key, value) in zip(
+            range(start, self.catalog_table.rowCount()), items
+        ):
+            family = value.item["attributes"]["structure_family"]
             if family == StructureFamily.node:
                 icon = self.style().standardIcon(QStyle.SP_DirHomeIcon)
             elif family == StructureFamily.array:
-                icon = QIcon(QPixmap(ICONS['new_image']))
+                icon = QIcon(QPixmap(ICONS["new_image"]))
             else:
-                icon = self.style().standardIcon(QStyle.SP_TitleBarContextHelpButton)
-            self.catalog_table.setItem(row_index, 0, QTableWidgetItem(icon,key))
+                icon = self.style().standardIcon(
+                    QStyle.SP_TitleBarContextHelpButton
+                )
+            self.catalog_table.setItem(
+                row_index, 0, QTableWidgetItem(icon, key)
+            )
 
         # remove extra rows
         for row in range(self._rows_per_page - len(items)):
             self.catalog_table.removeRow(self.catalog_table.rowCount() - 1)
-        
-        headers = [str(x + 1) for x in range(node_offset, node_offset + self.catalog_table.rowCount())]
+
+        headers = [
+            str(x + 1)
+            for x in range(
+                node_offset, node_offset + self.catalog_table.rowCount()
+            )
+        ]
         if self.node_path:
-            headers = [''] + headers
+            headers = [""] + headers
 
         self.catalog_table.setVerticalHeaderLabels(headers)
         self._clear_metadata()
@@ -340,11 +365,10 @@ class TiledBrowser(QWidget):
     def _set_current_location_label(self):
         starting_index = self._current_page * self._rows_per_page + 1
         ending_index = min(
-            self._rows_per_page * (self._current_page + 1), len(self.get_current_node())
+            self._rows_per_page * (self._current_page + 1),
+            len(self.get_current_node()),
         )
-        current_location_text = (
-            f"{starting_index}-{ending_index} of {len(self.get_current_node())}"
-        )
+        current_location_text = f"{starting_index}-{ending_index} of {len(self.get_current_node())}"
         self.current_location_label.setText(current_location_text)
 
 
