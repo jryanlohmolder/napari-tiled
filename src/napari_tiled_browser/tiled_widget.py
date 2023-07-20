@@ -32,7 +32,7 @@ from qtpy.QtWidgets import (
 )
 from tiled.client import from_uri
 from tiled.client.array import DaskArrayClient
-from tiled.client.node import Node
+from tiled.client.container import Container
 from tiled.structures.core import StructureFamily
 
 
@@ -50,12 +50,12 @@ class DummyClient:
 
 
 STRUCTURE_CLIENTS = collections.defaultdict(lambda: DummyClient)
-STRUCTURE_CLIENTS.update({"array": DaskArrayClient, "node": Node})
+STRUCTURE_CLIENTS.update({"array": DaskArrayClient, "container": Container})
 
 
 class TiledBrowser(QWidget):
     NODE_ID_MAXLEN = 8
-    SUPPORTED_TYPES = (StructureFamily.array, StructureFamily.node)
+    SUPPORTED_TYPES = (StructureFamily.array, StructureFamily.container)
 
     # your QWidget.__init__ can optionally request the napari viewer instance
     # in one of two ways:
@@ -223,7 +223,7 @@ class TiledBrowser(QWidget):
         if family == StructureFamily.array:
             layer = self.viewer.add_image(node, name=node_id)
             layer.reset_contrast_limits()
-        elif family == StructureFamily.node:
+        elif family == StructureFamily.container:
             self.enter_node(node_id)
         else:
             show_info(f"Type not supported:'{family}")
@@ -316,7 +316,7 @@ class TiledBrowser(QWidget):
             range(start, self.catalog_table.rowCount()), items
         ):
             family = value.item["attributes"]["structure_family"]
-            if family == StructureFamily.node:
+            if family == StructureFamily.container:
                 icon = self.style().standardIcon(QStyle.SP_DirHomeIcon)
             elif family == StructureFamily.array:
                 icon = QIcon(QPixmap(ICONS["new_image"]))
